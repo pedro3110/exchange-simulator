@@ -5,18 +5,13 @@ from src.exchange.messages.for_journal import MessageForJournal
 from src.exchange.notifications.market_status_notification import MarketStatusNotification
 from src.exchange.notifications.order_status_notification import OrderStatusNotification
 from src.exchange.messages.for_agent import MessageForAgent
+from src.exchange.base_journal import JournalBase
 from src.utils.rounding import eq_rounded
 import heapq
 
 
-class JournalVersion1(AtomicDEVS, Debug):
-    """
-    Journal DEVS Atomic model. It keeps track of the latest updates in orderbooks and market state, and transmits some
-    of this information to the agent that interact with the market. This is a service that the journal provides to
-    the agent that have a subscription to the journal
-    """
-    def __init__(self, market, identifier, current_time, remaining, journal_input_ports,
-                 journal_output_ports):
+class JournalVersion1(JournalBase, Debug):
+    def __init__(self, market, identifier):
         AtomicDEVS.__init__(self, identifier)
         self.market = market
         self.identifier = identifier
@@ -29,74 +24,18 @@ class JournalVersion1(AtomicDEVS, Debug):
 
         self.in_agent = self.addInPort("in_agent")
         self.in_orderbook = self.addInPort("in_orderbook")
+
         self.out_next = self.addOutPort("out_next")
         self.out_notify_order = self.addOutPort("out_notify_order")
-
         output_ports_map = {
             'out_next': getattr(self, 'out_next'),
             'out_notify_order': getattr(self, 'out_notify_order')
         }
-        self.strategy = JournalStrategy(self, identifier+'_strategy', output_ports_map)
-
-
-    def get_identifier(self):
-        return self.identifier
-
-    def get_elapsed(self):
-        return self.elapsed
-
-    def get_current_time(self):
-        return self.last_current_time
-
-    def timeAdvance(self):
-        self.debug("(clock) time advance: %f" % self.get_time_advance())
-        return self.get_time_advance()
-
-    def get_time_advance(self):
-        return self.time_advance
-
-    def outputFnc(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Output function (%f, %f, %f)" % (
-        self.get_current_time(), self.get_time_advance(), self.get_current_time() + elapsed))
-
-        output = self.strategy.output_function(self.last_current_time, elapsed)
-        return output
-
-    def intTransition(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Internal transition (%f, %f, %f, %f)" % (self.get_current_time(), self.get_time_advance(), elapsed, self.get_current_time() + elapsed))
-
-        ta = self.strategy.process_internal(self.get_current_time(), elapsed)
-        # Updates
-        self.time_advance = ta
-        self.last_transition = 'internal'
-        self.last_elapsed = ta
-        self.last_current_time += elapsed
-
-        self.debug("(intTransition) Update time_advance=%f, current_time=%f, last_elapsed=%f" % (self.time_advance, self.last_current_time, self.last_elapsed))
-        return self.state
-
-    def extTransition(self, inputs):
-        elapsed = self.get_elapsed()
-        self.debug("====================> External Transition (%f, %f, %f)" % (self.get_current_time(), elapsed, self.get_current_time() + elapsed))
-        self.last_transition = 'external'
-
-        map_method = {'in_orderbook': self.strategy.process_in_orderbook,
-                      'in_agent': self.strategy.process_in_agent}
-        assert (set(map_method.keys()).issubset(set([port.name for port in self.ports if port.is_input])))
-        input_match = list(filter(lambda x: x.name in map_method.keys(), inputs.keys()))
-        assert (len(input_match) == 1)
-        message = inputs[input_match[0]]
-        ta = map_method[input_match[0].name](self.get_current_time(), self.get_elapsed(), message)
-        # Updates
-        self.last_elapsed = ta
-        self.time_advance = ta
-        self.last_current_time += elapsed
-        self.debug("(extTransition) Update time_advance = %f" % self.time_advance)
-        return self.strategy
+        strategy_params = {
+            'identifier': identifier + '_strategy',
+            'output_ports_map': output_ports_map
+        }
+        super(JournalVersion1, self).__init__(identifier+'_strategy', JournalStrategy, strategy_params)
 
 
 class MessageToDeliver:
@@ -116,8 +55,10 @@ class JournalStrategy(Debug):
         self.identifier = identifier
         self.output_ports_map = output_ports_map
 
+        self.next_wakeup_time = float('inf')
+
         self.ob_notifications = []
-        self.next_messages_delivery = {output_port: [] for output_port in output_ports_map}  # output_port => [message]
+        self.next_messages_delivery = {output_port: [] for output_port in output_ports_map}
 
         self.last_message_id = 0
 
@@ -135,11 +76,9 @@ class JournalStrategy(Debug):
                 assert (current_time + elapsed <= next_message.wakeup_time)
                 if eq_rounded(current_time + elapsed, next_message.wakeup_time):
                     self.debug("current_time + elapsed == next_message.wakeup_time")
-                    # self.debug("ASDF %f %f %f" % (current_time, elapsed, next_message.wakeup_time))
                     external_message = next_message.message
                     external_message.set_time_sent(current_time + elapsed)
-                    # Output through right port
-                    output[self.output_ports_map[output_port]] = external_message
+                    output[output_port] = external_message
 
                 else:
                     self.debug("%f %f %f" % (current_time, elapsed, next_message.wakeup_time))
@@ -169,6 +108,9 @@ class JournalStrategy(Debug):
             return float('inf')
 
     def process_in_agent(self, current_time, elapsed, message):
+        raise NotImplemented()
+
+    def process_in_next(self, current_time, elapsed, message):
         raise NotImplemented()
 
     def get_next_message_id(self):
@@ -201,14 +143,6 @@ class JournalStrategy(Debug):
                 external_message2 = MessageForAgent(time_sent=wakeup_time, value=order_status_notification)
                 internal_message2 = MessageToDeliver(self.get_next_message_id(), external_message2, wakeup_time)
                 heapq.heappush(self.next_messages_delivery['out_notify_order'], internal_message2)
-
-                # Get min wakeup time
-                # smallest_wakeup_time = float('inf')
-                # for out_port in ['out_next', 'out_notify_order']:
-                #     if len(self.next_messages_delivery[out_port]) > 0:
-                #         smallest_tmp = heapq.nsmallest(1, self.next_messages_delivery[out_port])[0].wakeup_time
-                #         smallest_wakeup_time = min(smallest_wakeup_time, smallest_tmp)
-                # self.debug("Wait time = %f" % smallest_wakeup_time)
 
                 # Log notification of orders
                 self.debug("%s" % str([len(m.message.value.get_accepted()) for m in self.next_messages_delivery['out_notify_order']]))

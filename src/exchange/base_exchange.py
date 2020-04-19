@@ -2,22 +2,7 @@ from pypdevs.DEVS import CoupledDEVS
 from src.utils.debug import Debug
 
 
-class MarketState:
-    def __init__(self, devs_model, tick_size=1/16., start_time=0.0, end_time=float('inf')):
-        self.devs_model = devs_model
-        self.tick_size = tick_size
-        self.start_time = start_time
-
-        self.current_time = 0.0
-        self.end_time = end_time
-        self.remaining = float('inf')
-        assert(self. start_time < self.end_time)
-
-    def get_devs_model(self):
-        return self.devs_model
-
-
-class Market(CoupledDEVS, Debug):
+class Exchange(CoupledDEVS, Debug):
     """
     A Market is a system of objects which can act as a means of support to the interaction of a big number of agent
     in an asynchronous way
@@ -37,7 +22,6 @@ class Market(CoupledDEVS, Debug):
                  regulator=None, journal=None):
         CoupledDEVS.__init__(self, identifier)
         self.identifier = identifier
-        self.state = MarketState(devs_model=self)
 
         orderbooks = {orderbook.identifier: self.addSubModel(orderbook) for orderbook in market_orderbooks}
         regulator = self.addSubModel(regulator)
@@ -76,40 +60,4 @@ class Market(CoupledDEVS, Debug):
             self.connectPorts(component_port_from, component_port_to)
 
     def get_identifier(self):
-        return "market"
-
-    def intTransition(self):
-        """
-        Only make an internal transition when:
-            - t=0 (init simulation)
-            - the market is affected by an external input
-            - (TODO) some internal process finished execution and action should be taken
-        :return: MarketState
-        """
-        self.debug("====================> Internal transition" % self.state.current_time)
-        self.state.remaining = float('inf')
-        return self.state
-
-    def timeAdvance(self):
-        """
-        Always determined by the market's state
-        :return: float
-        """
-        return self.state.remaining
-
-    def outputFnc(self):
-        """
-        React to transmit information from the internal components of the market to the external agents
-        :return:
-        """
-        self.debug("====================> Output function" % self.state.current_time)
-        return {}
-
-    def extTransition(self, inputs):
-        """
-        Handles input by agent that want to interact with the market
-        :param inputs: Dictionary of messages
-        :return: MarketState
-        """
-        self.debug("====================> External transition" % self.state.current_time)
-        return self.state
+        raise NotImplemented()

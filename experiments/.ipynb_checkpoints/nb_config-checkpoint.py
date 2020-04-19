@@ -11,11 +11,11 @@ from src.strategies.stochastic.stochastic_version5 import StochasticStrategy5
 from src.strategies.stochastic.stochastic_version6 import StochasticStrategy6
 from src.strategies.replay.replay_version3 import ReplayVersion3Strategy
 
-from src.exchange.structures.version2_market import Version2Market
+from src.exchange.structures.version2_exchange import Version2Exchange
 from src.strategies.arbitrage.arbitrage_2 import ArbitrageurVersion1
 from src.strategies.arbitrage.spread_generator_1 import SpreadGeneratorVersion1
 
-from src.agent.base import AgentBase
+from src.agent.agent_base import AgentBase
 
 import functools
 import time

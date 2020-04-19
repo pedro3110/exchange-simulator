@@ -5,99 +5,28 @@ from src.exchange.messages.for_journal import MessageForJournal
 from src.exchange.messages.for_agent import MessageForAgent
 from src.utils.rounding import assert_equals_rounded, assert_leq_rounded, eq_rounded
 from src.utils.decorators import approximating_time_advance
+from src.exchange.base_regulator import RegulatorBase
 import heapq
 
 
-class BasicRegulatorVersion1(AtomicDEVS, Debug):
-    """
-    Has a specific connection with each orderbook & forwards messages intelligently
-    Has a mapping order => agent, and only allows cancelling order send by same agent (or else, reject the order)
-    """
-    def __init__(self, market, identifier, current_time, remaining, input_ports, contract_port_map, agents_delay_map):
-        AtomicDEVS.__init__(self, identifier)
+class BasicRegulatorVersion1(RegulatorBase, Debug):
+    def __init__(self, market, identifier, input_ports, contract_port_map, agents_delay_map):
+
         self.market = market
-        self.identifier = identifier
+        # self.identifier = identifier
 
         self.last_current_time = 0.0
         self.time_advance = float('inf')
 
-        self.last_transition = None  # [internal, external]
+        self.last_transition = None
         self.last_elapsed = 0.0
-
-        # Ports corresponding to orderbooks
-        self.contract_port_map = contract_port_map
-        for port_name in input_ports:
-            setattr(self, port_name, self.addInPort(port_name))
-        for contract, port_name in contract_port_map.items():
-            setattr(self, port_name, self.addOutPort(port_name))
-
-        ports_map = {contract: getattr(self, port_name) for contract, port_name in contract_port_map.items()}
-        self.strategy = RegulatorStrategy(self, identifier, agents_delay_map, ports_map)
-
-    def get_identifier(self):
-        return self.identifier
-
-    @approximating_time_advance
-    def get_elapsed(self):
-        return self.elapsed
-
-    @approximating_time_advance
-    def get_current_time(self):
-        return self.last_current_time
-
-    def timeAdvance(self):
-        self.debug("(clock) time advance: %f" % self.get_time_advance())
-        return self.get_time_advance()
-
-    @approximating_time_advance
-    def get_time_advance(self):
-        return self.time_advance
-
-    def outputFnc(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Output function (%f, %f, %f)" % (
-            self.get_current_time(), self.get_time_advance(), self.get_current_time() + elapsed))
-
-        output = self.strategy.output_function(self.last_current_time, elapsed)
-        return output
-
-    def intTransition(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Internal transition (%f, %f, %f, %f)" % (
-        self.get_current_time(), self.get_time_advance(), elapsed, self.get_current_time() + elapsed))
-
-        ta = self.strategy.process_internal(self.get_current_time(), elapsed)
-        # Updates
-        self.time_advance = ta
-        self.last_transition = 'internal'
-        self.last_elapsed = ta
-        self.last_current_time += elapsed
-
-        self.debug("(intTransition) Update time_advance=%f, current_time=%f, last_elapsed=%f" % (
-        self.time_advance, self.last_current_time, self.last_elapsed))
-        return self.state
-
-    def extTransition(self, inputs):
-        elapsed = self.get_elapsed()
-        self.debug("====================> External Transition (%f, %f, %f)" % (
-        self.get_current_time(), elapsed, self.get_current_time() + elapsed))
-        self.last_transition = 'external'
-
-        map_method = {'in_order': self.strategy.process_in_order}
-        assert (set(map_method.keys()).issubset(set([port.name for port in self.ports if port.is_input])))
-        input_match = list(filter(lambda x: x.name in map_method.keys(), inputs.keys()))
-        assert (len(input_match) == 1)
-        message = inputs[input_match[0]]
-
-        ta = map_method[input_match[0].name](self.get_current_time(), self.get_elapsed(), message)
-        # Updates
-        self.last_elapsed = ta
-        self.time_advance = ta
-        self.last_current_time += elapsed
-        self.debug("(extTransition) Update time_advance = %f" % self.time_advance)
-        return self.strategy
+        strategy_params = {
+            'identifier': identifier,
+            'agents_delay_map': agents_delay_map,
+            'output_ports_map': contract_port_map
+        }
+        super(BasicRegulatorVersion1, self).__init__(identifier, RegulatorStrategy, strategy_params,
+                                                     input_ports, contract_port_map)
 
 
 class MessageToDeliver:
@@ -116,6 +45,8 @@ class RegulatorStrategy(Debug):
         self.identifier = identifier + '_strategy'
         self.agents_delay_map = agents_delay_map
         self.output_ports_map = output_ports_map
+
+        self.next_wakeup_time = float('inf')
 
         self.next_messages_delivery = {output_port: [] for output_port in output_ports_map}  # output_port => [message]
         self.map_order_agent = {}  # order_id => agent_id
@@ -161,10 +92,7 @@ class RegulatorStrategy(Debug):
         return new_internal_message
 
     def process_input_message_for_orderbook(self, current_time, elapsed, message):
-        self.debug("%f, %f, %f" % (message.time_sent, current_time, elapsed))
-
         assert_equals_rounded(message.time_sent, current_time + elapsed)
-
         if isinstance(message, MessageForOrderbook):
             wakeup_time = message.time_sent + self.agents_delay_map[message.agent]
             new_internal_message = self.prepare_message_for_orderbook(message, wakeup_time)
@@ -198,7 +126,6 @@ class RegulatorStrategy(Debug):
 
     def process_in_order(self, current_time, elapsed, message):
         self.debug("process_in_order")
-        self.debug("%s" % message)
         if isinstance(message, MessageForOrderbook):
             return self.process_input_message_for_orderbook(current_time, elapsed, message)
         elif isinstance(message, MessageForJournal):

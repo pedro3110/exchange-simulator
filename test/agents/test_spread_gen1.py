@@ -4,8 +4,8 @@ from src.exchange.orderbook.orderbook_version1 import OrderbookVersion1
 from src.system.simple_system import SimpleSystem
 from src.strategies.stochastic.stochastic_version5 import StochasticStrategy5
 from src.strategies.arbitrage.spread_generator_1 import SpreadGeneratorVersion1
-from src.agent.base import AgentBase
-from src.exchange.structures.version2_market import Version2Market
+from src.agent.agent_base import AgentBase
+from src.exchange.structures.version2_exchange import Version2Exchange
 import functools
 import random
 
@@ -20,9 +20,9 @@ class MultipleStochasticAgents(unittest.TestCase):
         orderbooks_map = {
             contract: OrderbookVersion1('ob_' + contract, contract, delay_order, delay_notification)
             for contract in contracts}
-        market = Version2Market('market', current_time, float('inf'), orderbooks_map.values(),
-                                market_input_ports, market_output_ports, agents_delay_map,
-                                start_time=start_time, end_time=end_time)
+        market = Version2Exchange('market', current_time, float('inf'), orderbooks_map.values(),
+                                  market_input_ports, market_output_ports, agents_delay_map,
+                                  start_time=start_time, end_time=end_time)
         connections = [((agent.identifier, 'out_order'), (market.identifier, 'in_agent_regulator'))
                        for agent in agents]
         # Reactive agent observes the output from journal

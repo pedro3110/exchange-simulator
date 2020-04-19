@@ -1,30 +1,39 @@
 import logging
+import sys, os
+from config import log_path
 
 
 class Debug(object):
 
-    logger_debug = logging.getLogger('')
+    logger_info = logging.getLogger("info")
+    logger_info.setLevel(logging.INFO)
+    logger_debug = logging.getLogger('debug')
     logger_debug.setLevel(logging.DEBUG)
 
-    # def __init__(self):
-    #
-    #     # self.logger_info = logging.getLogger('')
-    #      #self.logger_info.setLevel(logging.INFO)
-    #
-    #     # if formatter is None:
-    #     #     formatter = logging.Formatter('%(name)s : %(message)s')
-    #     # file_handler = logging.FileHandler(filename)
-    #     # file_handler.setFormatter(formatter)
-    #     # self.logger.addHandler(file_handler)
+    formatter = logging.Formatter('%(message)s')
+    file_handler = logging.FileHandler(log_path + 'all.log')
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+
+    logger_debug.addHandler(file_handler)
+    # logger_debug.addHandler(stdout_handler)
+
+    # Clean files
+    for filename in os.listdir(log_path):
+        for filename in ['all.log']:
+            dirname = "%s%s" % (log_path, filename)
+            with open(dirname, 'w+') as f:
+                f.truncate()
 
     def get_identifier(self):
         raise NotImplemented()
 
-    # def get_info(self):
-    #     return self.logger_info
+    def get_info(self):
+        return self.logger_info
 
     def debug(self, msg):
-        Debug.logger_debug.debug(self.get_identifier() + ":" + msg)
+        Debug.logger_debug.debug("%s : %s" % (self.get_identifier(), msg))
 
-    # def info(self, msg):
-    #     self.logger_debug.debug(self.get_identifier() + ":" + msg)
+    def info(self, msg):
+        Debug.logger_debug.info("%s : %s" % (self.get_identifier(), msg))

@@ -6,14 +6,11 @@ from src.exchange.notifications.ob_information import OBInformation
 from src.exchange.notifications.ob_notification import OBNotificationCreator
 from src.utils.rounding import rounded, eq_rounded, lt_rounded
 from src.utils.decorators import approximating_time_advance
+from src.exchange.base_orderbook import OrderbookBase
 import heapq
 
 
-class OrderbookVersion1(AtomicDEVS, Debug):
-    """
-    Has a specific connection with each orderbook & forwards messages intelligently
-    Has a mapping order => agent, and only allows cancelling order send by same agent (or else, reject the order)
-    """
+class OrderbookVersion1(OrderbookBase, Debug):
     def __init__(self, identifier, contract, delay_order, delay_notification):
         AtomicDEVS.__init__(self, identifier)
         self.identifier = identifier
@@ -31,67 +28,9 @@ class OrderbookVersion1(AtomicDEVS, Debug):
         output_ports_map = {'out_journal': self.out_journal}
         self.strategy = OrderbookStrategy(self, identifier, contract, delay_order, delay_notification, output_ports_map)
 
-    def get_identifier(self):
-        return self.identifier
-
-    def get_elapsed(self):
-        return self.elapsed
-
-    def get_current_time(self):
-        return self.last_current_time
 
     def set_tick_size(self, tick_size):
         self.tick_size = tick_size
-
-    def timeAdvance(self):
-        self.debug("(clock) time advance: %f" % self.get_time_advance())
-        return self.get_time_advance()
-
-    @approximating_time_advance
-    def get_time_advance(self):
-        return self.time_advance
-
-    def outputFnc(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Output function (%f, %f, %f)" % (self.get_current_time(), self.get_time_advance(), self.get_current_time() + elapsed))
-
-        output = self.strategy.output_function(self.last_current_time, elapsed)
-        return output
-
-    def intTransition(self):
-        elapsed = self.get_time_advance()
-        self.debug("last_elapsed=%f elapsed=%f" % (self.last_elapsed, elapsed))
-        self.debug("====================> Internal transition (%f, %f, %f, %f)" % (self.get_current_time(), self.get_time_advance(), elapsed, self.get_current_time() + elapsed))
-
-        ta = self.strategy.process_internal(self.get_current_time(), elapsed)
-        # Updates
-        self.time_advance = ta
-        self.last_transition = 'internal'
-        self.last_elapsed = ta
-        self.last_current_time += elapsed
-
-        self.debug("(intTransition) Update time_advance=%f, current_time=%f, last_elapsed=%f" % (self.time_advance, self.last_current_time, self.last_elapsed))
-        return self.state
-
-    def extTransition(self, inputs):
-        elapsed = self.get_elapsed()
-        self.debug("====================> External Transition (%f, %f, %f)" % (self.get_current_time(), elapsed, self.get_current_time() + elapsed))
-        self.last_transition = 'external'
-
-        map_method = {'in_order': self.strategy.process_in_order}
-        assert (set(map_method.keys()).issubset(set([port.name for port in self.ports if port.is_input])))
-        input_match = list(filter(lambda x: x.name in map_method.keys(), inputs.keys()))
-        assert (len(input_match) == 1)
-        message = inputs[input_match[0]]
-
-        ta = map_method[input_match[0].name](self.get_current_time(), self.get_elapsed(), message)
-        # Updates
-        self.last_elapsed = ta
-        self.time_advance = ta
-        self.last_current_time += elapsed
-        self.debug("(extTransition) Update time_advance = %f" % self.time_advance)
-        return self.strategy
 
 
 class PendingNotification:
@@ -165,7 +104,7 @@ class OrderbookStrategy(Debug):
                         best_bid=self.bid_ask_table.queue_observer.best_bid()
                     )
                     ob_notification = OBNotificationCreator.create_from_batable_notification(bat_notification, ob_information)
-                    output[self.output_ports_map[out_port]] = MessageForJournal(current_time + elapsed, ob_notification)
+                    output[out_port] = MessageForJournal(current_time + elapsed, ob_notification)
                 else:
                     self.debug("Notification not ready: %f %f %f" % (current_time, elapsed, next_message.wakeup_time))
                     heapq.heappush(self.next_notification_delivery[self.contract], next_message)

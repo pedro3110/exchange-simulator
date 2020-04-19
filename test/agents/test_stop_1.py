@@ -4,8 +4,8 @@ from src.exchange.orderbook.orderbook_version1 import OrderbookVersion1
 from src.system.simple_system import SimpleSystem
 from src.strategies.replay.replay_version3 import ReplayVersion3Strategy
 from src.strategies.stochastic.stochastic_version5 import StochasticStrategy5
-from src.agent.base import AgentBase
-from src.exchange.structures.version2_market import Version2Market
+from src.exchange.structures.version2_exchange import Version2Exchange
+from src.agent.agent_base import AgentBase
 import functools
 import pandas as pd
 import random
@@ -21,17 +21,17 @@ class MultipleStochasticAgents(unittest.TestCase):
         orderbooks_map = {
             contract: OrderbookVersion1('ob_' + contract, contract, delay_order, delay_notification)
             for contract in contracts}
-        market = Version2Market('market', current_time, float('inf'), orderbooks_map.values(),
-                                market_input_ports, market_output_ports, agents_delay_map,
-                                start_time=start_time, end_time=end_time)
-        connections = [((agent.identifier, 'out_order'), (market.identifier, 'in_agent_regulator'))
+        market = Version2Exchange('market', current_time, float('inf'), orderbooks_map.values(),
+                                  market_input_ports, market_output_ports, agents_delay_map,
+                                  start_time=start_time, end_time=end_time)
+        connections = [((agent.identifier, 'out_order'), (market.get_identifier(), 'in_agent_regulator'))
                        for agent in agents]
         # Reactive agent observes the output from journal
-        connections += [((market.identifier, 'out_next_journal_agent'), (agent.identifier, 'in_next'))
+        connections += [((market.get_identifier(), 'out_next_journal_agent'), (agent.identifier, 'in_next'))
                         for agent in receiver_agents]
-        connections += [((market.identifier, 'out_notify_order_journal_agent'), (agent.identifier, 'in_notify_order'))
+        connections += [((market.get_identifier(), 'out_notify_order_journal_agent'), (agent.identifier, 'in_notify_order'))
                         for agent in receiver_agents]
-        connections += [((market.identifier, 'out_next_regulator_agent'), (agent.identifier, 'in_notify_order'))
+        connections += [((market.get_identifier(), 'out_next_regulator_agent'), (agent.identifier, 'in_notify_order'))
                         for agent in receiver_agents]
         m = SimpleSystem(market=market, agents=agents, connections=connections)
         sim = Simulator(m)

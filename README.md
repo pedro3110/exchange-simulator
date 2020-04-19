@@ -1,4 +1,5 @@
+Configuration file: exchange-simulator/config.py
 
-Notebook configuration:
-* jupyter notebook --generate-config
-* go to configuration file and set c.NotebookApp.notebook_dir = 'your path'
+DEVS Exchange - Market Simulator
+
+This project provides a realistic discrete events simulator of a financial exchange. 

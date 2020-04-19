@@ -1,4 +1,4 @@
-from src.devs_base.market import Market
+from src.exchange.base_exchange import Exchange
 from src.exchange.journal.journal_version1 import JournalVersion1
 from src.exchange.regulator.regulator_version1 import BasicRegulatorVersion1
 
@@ -18,7 +18,7 @@ class MarketState:
         return self.devs_model
 
 
-class Version2Market(Market):
+class Version2Exchange(Exchange):
     """
     Contains the components and internal connections of the possibly most basic composition of a market
     """
@@ -27,6 +27,7 @@ class Version2Market(Market):
                  tick_size=0.001, start_time=0.0, end_time=float('inf')):
 
         # Initialize tick size of each orderbook
+        self.identifier = identifier
         self.start_time = start_time
         self.end_time = end_time
         self.tick_size = tick_size
@@ -46,14 +47,11 @@ class Version2Market(Market):
         regulator_contract_port_map['out_order'] = 'out_order'
 
         # => Connect out_order of Regulator with out_journal_agent
-        regulator = BasicRegulatorVersion1(self, 'regulator', current_time, remaining, regulator_input_ports,
+        regulator = BasicRegulatorVersion1(self, 'regulator', regulator_input_ports,
                                            regulator_contract_port_map, agents_delay_map)
         # => Journal
-        journal_input_ports = ['in_agent', 'in_orderbook']
-        journal_output_ports = ['out_next', 'out_notify_order']
         journal_identifier = 'journal_1'
-        journal = JournalVersion1(self, journal_identifier, current_time, remaining, journal_input_ports,
-                                  journal_output_ports)
+        journal = JournalVersion1(self, journal_identifier)
 
         # Regulator => orderbooks
         internal_connections = [
@@ -81,8 +79,11 @@ class Version2Market(Market):
         ]
 
         # Initialize market with desired components
-        super(Version2Market, self).__init__(identifier, market_orderbooks,
-                                             input_ports, output_ports, internal_connections,
-                                             external_input_connections, external_output_connections,
-                                             regulator, journal)
+        super(Version2Exchange, self).__init__(identifier, market_orderbooks,
+                                               input_ports, output_ports, internal_connections,
+                                               external_input_connections, external_output_connections,
+                                               regulator, journal)
         self.state = MarketState(self, tick_size, start_time, end_time)
+
+    def get_identifier(self):
+        return self.identifier
